@@ -235,6 +235,8 @@
 			this.draw_signals(y + this._actors_height);
 
 			this._paper.setFinish();
+                        // TODO: move this hack
+                        $(document).trigger("diagram:rendered");
 		},
 
 		layout : function() {
@@ -535,10 +537,11 @@
 				t = paper.text(x, y, text);
 				t.attr(f);
 			}
+                        // NOTE: remove white background box
 			// draw a rect behind it
-			var bb = t.getBBox();
-			var r = paper.rect(bb.x, bb.y, bb.width, bb.height);
-			r.attr({'fill': "#fff", 'stroke': 'none'});
+			//var bb = t.getBBox();
+			//var r = paper.rect(bb.x, bb.y, bb.width, bb.height);
+			//r.attr({'fill': "#fff", 'stroke': 'none'});
 
 			t.toFront();
 		},
@@ -620,9 +623,135 @@
 		}
 	});
 
+	var MozTheme = function(diagram) {
+		this.init(diagram);
+	};
+
+	// Take the standard RaphaëlTheme and make all the lines wobbly
+	_.extend(MozTheme.prototype, BaseTheme.prototype, {
+		init_font : function() {
+			this._font = {
+				'font-size': 16,
+                                'font-family': 'moz'
+			};
+
+			this._font._obj = this._paper.getFont('moz');
+		}
+	});
+
+        var FastTheme = function(diagram) {
+                 this.init(diagram);
+        };
+
+        _.extend(FastTheme.prototype, BaseTheme.prototype, {
+                init_font: function() {
+                        this._font = {
+                                "font-size": 16,
+                                "text-anchor": "start"
+                        };
+                },
+		draw_text : function (x, y, text, font) {
+			var paper = this._paper;
+			var f = font || {};
+			var t;
+			if (f._obj) {
+				t = paper.print_center(x, y, text, f._obj, f['font-size']);
+			} else {
+				t = paper.text(x, y, text);
+				t.attr(f);
+			}
+			// draw a rect behind it
+			//var bb = t.getBBox();
+			//var r = paper.rect(bb.x, bb.y, bb.width, bb.height);
+			//r.attr({'fill': "#fff", 'stroke': 'none'});
+
+			t.toFront();
+                        return { text: t };
+		},
+
+		draw_text_box : function (box, text, margin, padding, font) {
+			var x = box.x + margin;
+			var y = box.y + margin;
+			var w = box.width  - 2 * margin;
+			var h = box.height - 2 * margin;
+
+			// Draw inner box
+			var rect = this.draw_rect(x, y, w, h);
+			rect.attr(LINE);
+
+			// Draw text (in the center)
+			//x = getCenterX(box);
+			//y = getCenterY(box);
+
+			var tb = this.draw_text(x + margin, y + margin, text, font);
+                        tb.text.attr({y: getCenterY(box) });
+                        return tb;
+		},
+
+		draw_signal : function (signal, offsetY) {
+			var aX = getCenterX( signal.actorA );
+			var bX = getCenterX( signal.actorB );
+
+			// Mid point between actors
+			var x = (bX - aX) / 2 + aX;
+			var y = offsetY + SIGNAL_MARGIN + 2*SIGNAL_PADDING;
+
+			// Draw the text in the middle of the signal
+			var tb = this.draw_text(x, y, signal.message, this._font);
+                        var bb = tb.text.getBBox();
+                        //tb.box.attr({x: bb.x - bb.width/2 });
+                        tb.text.attr({x: bb.x - bb.width/2 });
+
+			// Draw the line along the bottom of the signal
+			y = offsetY + signal.height - SIGNAL_MARGIN - SIGNAL_PADDING;
+			var line = this.draw_line(aX, y, bX, y);
+			line.attr(LINE);
+			line.attr({
+				'arrow-end': this.arrow_types[signal.arrowtype] + '-wide-long',
+				'stroke-dasharray': this.line_types[signal.linetype]
+			});
+
+			//var ARROW_SIZE = 16;
+			//var dir = this.actorA.x < this.actorB.x ? 1 : -1;
+			//draw_arrowhead(bX, offsetY, ARROW_SIZE, dir);
+		},
+
+		draw_note : function (note, offsetY) {
+			note.y = offsetY;
+			var actorA = note.hasManyActors() ? note.actor[0] : note.actor;
+			var aX = getCenterX( actorA );
+			switch (note.placement) {
+				case PLACEMENT.RIGHTOF:
+					note.x = aX + ACTOR_MARGIN;
+					break;
+				case PLACEMENT.LEFTOF:
+					note.x = aX - ACTOR_MARGIN - note.width;
+					break;
+				case PLACEMENT.OVER:
+					if (note.hasManyActors()) {
+						var bX = getCenterX( note.actor[1] );
+						var overlap = NOTE_OVERLAP + NOTE_PADDING;
+						note.x = aX - overlap;
+						note.width = (bX + overlap) - note.x;
+					} else {
+						note.x = aX - note.width / 2;
+					}
+					break;
+				default:
+					throw new Error("Unhandled note placement:" + note.placement);
+			}
+
+			var tb = this.draw_text_box(note, note.message, NOTE_MARGIN, NOTE_PADDING, this._font);
+                        //tb.box.remove();
+                        tb.text.attr({ x: tb.text.getBBox().x - NOTE_PADDING });
+		},
+        });
+
 	var themes = {
 		simple : RaphaëlTheme,
-		hand  : HandRaphaëlTheme
+		hand  : HandRaphaëlTheme,
+                moz  : MozTheme,
+                fast  : FastTheme
 	};
 
 	Diagram.prototype.drawSVG = function (container, options) {
